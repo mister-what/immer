@@ -3,6 +3,7 @@
 import regeneratorRuntime from "regenerator-runtime"
 import {
     is,
+    has,
     isProxyable,
     isProxy,
     freeze,
@@ -192,7 +193,7 @@ function get(state, prop) {
         }
         return value
     } else {
-        if (prop !== "constructor" && prop in state.proxies) {
+        if (has(state.proxies, prop)) {
             return state.proxies[prop]
         }
         const value = state.base[prop]
@@ -207,7 +208,7 @@ function set(state, prop, value) {
     if (!state.modified) {
         if (
             (prop in state.base && is(state.base[prop], value)) ||
-            (prop in state.proxies && state.proxies[prop] === value)
+            (has(state.proxies, prop) && state.proxies[prop] === value)
         ) {
             return true
         }
@@ -230,7 +231,7 @@ function deleteProperty(state, prop) {
 function getOwnPropertyDescriptor(state, prop) {
     const owner = state.modified
         ? state.copy
-        : prop in state.proxies ? state.proxies : state.base
+        : has(state.proxies, prop) ? state.proxies : state.base
     const descriptor = Reflect.getOwnPropertyDescriptor(owner, prop)
     if (
         descriptor &&
@@ -282,7 +283,7 @@ export function produceProxy(baseState, producer) {
         // create proxy for root
         const rootClone = createProxy(undefined, baseState)
         // execute the thunk
-        verifyReturnValue(producer(rootClone))
+        verifyReturnValue(producer.call(rootClone, rootClone))
         // and finalize the modified proxy
         const res = finalize(rootClone)
         // revoke all proxies
