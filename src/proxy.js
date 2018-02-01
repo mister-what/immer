@@ -1,6 +1,6 @@
 "use strict"
 // @ts-check
-
+import regeneratorRuntime from "regenerator-runtime"
 import {
     is,
     isProxyable,
