@@ -70,7 +70,7 @@ function runBaseTest(name, useProxies, freeze) {
                 expect(Array.isArray(nextState)).toBe(true)
                 expect(nextState.protoType).toBe(Object)
             })
-        )
+        ) {
             it("deep change bubbles up", () => {
                 const nextState = produce(baseState, s => {
                     s.anObject.nested.yummie = false
@@ -81,6 +81,7 @@ function runBaseTest(name, useProxies, freeze) {
                 expect(nextState.anObject.nested.yummie).toBe(false)
                 expect(nextState.anArray).toBe(baseState.anArray)
             })
+        }
 
         it("can add props", () => {
             const nextState = produce(baseState, s => {
@@ -219,7 +220,15 @@ function runBaseTest(name, useProxies, freeze) {
             })
             expect(nextState).not.toBe(baseState)
             expect(nextState.anArray).not.toBe(baseState.anArray)
-            expect(nextState.anArray).toEqual([3, 2, {c: 3, test: true}, 1])
+            expect(nextState.anArray).toEqual([
+                3,
+                2,
+                {
+                    c: 3,
+                    test: true
+                },
+                1
+            ])
         })
 
         it("reusing object should work", () => {
@@ -492,8 +501,18 @@ function runBaseTest(name, useProxies, freeze) {
                 draft.room = {elephant: {kiddo: draft.bear}}
             })
             expect(result).toEqual({
-                bear: {age: 10, legs: 4},
-                room: {elephant: {kiddo: {age: 10, legs: 4}}}
+                bear: {
+                    age: 10,
+                    legs: 4
+                },
+                room: {
+                    elephant: {
+                        kiddo: {
+                            age: 10,
+                            legs: 4
+                        }
+                    }
+                }
             })
 
             const result2 = produce(result, draft => {
@@ -501,8 +520,18 @@ function runBaseTest(name, useProxies, freeze) {
                 draft.room.elephant.kiddo.legs = 5
             })
             expect(result2).toEqual({
-                bear: {age: 11, legs: 4},
-                room: {elephant: {kiddo: {age: 10, legs: 5}}}
+                bear: {
+                    age: 11,
+                    legs: 4
+                },
+                room: {
+                    elephant: {
+                        kiddo: {
+                            age: 10,
+                            legs: 5
+                        }
+                    }
+                }
             })
         })
 
@@ -511,9 +540,21 @@ function runBaseTest(name, useProxies, freeze) {
                 arr: [
                     {
                         id: "100",
-                        arr: [{id: "1", no: 1}, {id: "2", no: 2}]
+                        arr: [
+                            {
+                                id: "1",
+                                no: 1
+                            },
+                            {
+                                id: "2",
+                                no: 2
+                            }
+                        ]
                     },
-                    {id: "3", no: 3}
+                    {
+                        id: "3",
+                        no: 3
+                    }
                 ]
             }
             const result = produce(base, draft => {
@@ -533,9 +574,21 @@ function runBaseTest(name, useProxies, freeze) {
                         arr: [
                             {
                                 id: "100",
-                                arr: [{id: "1", no: 1}, {id: "2", no: 2}]
+                                arr: [
+                                    {
+                                        id: "1",
+                                        no: 1
+                                    },
+                                    {
+                                        id: "2",
+                                        no: 2
+                                    }
+                                ]
                             },
-                            {id: "3", no: 3}
+                            {
+                                id: "3",
+                                no: 3
+                            }
                         ]
                     }
                 ]
@@ -573,14 +626,20 @@ function runBaseTest(name, useProxies, freeze) {
             const next = produce(data, draft => {
                 draft.x = true
             })
-            expect(next).toEqual({x: true, date: data.date})
+            expect(next).toEqual({
+                x: true,
+                date: data.date
+            })
             expect(next.date).toBe(data.date)
             const next2 = produce(next, draft => {
                 draft.date.setYear(2015)
             })
             // This still holds; because produce won't proxy Date objects
             // and the original is actually modified!
-            expect(next2).toEqual({x: true, date: data.date})
+            expect(next2).toEqual({
+                x: true,
+                date: data.date
+            })
             expect(next2.date).toBe(next.date)
             expect(next2.date).toBe(data.date)
             expect(next2).toBe(next)
@@ -662,7 +721,7 @@ function runBaseTest(name, useProxies, freeze) {
             expect(next.user).toEqual(user)
         })
 
-        if (freeze)
+        if (freeze) {
             it("should freeze new data well", () => {
                 const base = {}
                 const next = produce(base, draft => {
@@ -673,9 +732,13 @@ function runBaseTest(name, useProxies, freeze) {
                 expect(Object.isFrozen(next.x.y)).toBe(true)
                 expect(Object.isFrozen(next.x.y[0].z)).toBe(true)
             })
+        }
 
         it("should structurally share identical objects in the tree", () => {
-            const base = {bear: {legs: 4}, eagle: {legs: 3}}
+            const base = {
+                bear: {legs: 4},
+                eagle: {legs: 3}
+            }
             const next = produce(base, draft => {
                 const animal = draft.bear
                 animal.legs = animal.legs + 1
@@ -694,7 +757,7 @@ function runBaseTest(name, useProxies, freeze) {
             expect(next.kiddo).toBe(next.cow)
         })
 
-        if (useProxies)
+        if (useProxies) {
             it("should not allow changing prototype", () => {
                 produce({}, draft => {
                     expect(() => Object.setPrototypeOf(draft, Array)).toThrow(
@@ -702,6 +765,7 @@ function runBaseTest(name, useProxies, freeze) {
                     )
                 })
             })
+        }
 
         it("in should work", () => {
             produce(createBaseState(), draft => {

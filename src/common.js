@@ -37,9 +37,18 @@ export function isProxy(value) {
 }
 
 export function isProxyable(value) {
-    if (!value) return false
-    if (typeof value !== "object") return false
-    if (Array.isArray(value)) return true
+    if (!value) {
+        return false
+    }
+    if (typeof value !== "object") {
+        return false
+    }
+    if (Array.isArray(value)) {
+        return true
+    }
+    if (value instanceof Map) {
+        return true
+    }
     const proto = Object.getPrototypeOf(value)
     return proto === null || proto === Object.prototype
 }
@@ -57,9 +66,18 @@ export function shallowCopy(value) {
 
 export function each(value, cb) {
     if (Array.isArray(value)) {
-        for (let i = 0; i < value.length; i++) cb(i, value[i])
+        for (let i = 0; i < value.length; i++) {
+            cb(i, value[i])
+        }
+    } else if (value instanceof Map) {
+        const entries = value.entries()
+        for (let [key, value] of entries) {
+            cb(key, value)
+        }
     } else {
-        for (let key in value) cb(key, value[key])
+        for (let key in value) {
+            cb(key, value[key])
+        }
     }
 }
 
@@ -68,7 +86,9 @@ export function finalize(base) {
     if (isProxy(base)) {
         const state = base[PROXY_STATE]
         if (state.modified === true) {
-            if (state.finalized === true) return state.copy
+            if (state.finalized === true) {
+                return state.copy
+            }
             state.finalized = true
             return finalizeObject(
                 useProxies ? state.copy : (state.copy = shallowCopy(base)),
@@ -84,21 +104,36 @@ export function finalize(base) {
 
 function finalizeObject(copy, state) {
     const base = state.base
-    each(copy, (prop, value) => {
-        if (value !== base[prop]) copy[prop] = finalize(value)
-    })
+    if (copy instanceof Map) {
+        //copy.clear();
+        each(copy, (prop, value) => {
+            copy.set(finalize(prop), finalize(value))
+        })
+    } else {
+        each(copy, (prop, value) => {
+            if (value !== base[prop]) {
+                copy[prop] = finalize(value)
+            }
+        })
+    }
     return freeze(copy)
 }
 
 function finalizeNonProxiedObject(parent) {
     // If finalize is called on an object that was not a proxy, it means that it is an object that was not there in the original
     // tree and it could contain proxies at arbitrarily places. Let's find and finalize them as well
-    if (!isProxyable(parent)) return
-    if (Object.isFrozen(parent)) return
+    if (!isProxyable(parent)) {
+        return
+    }
+    if (Object.isFrozen(parent)) {
+        return
+    }
     each(parent, (i, child) => {
         if (isProxy(child)) {
             parent[i] = finalize(child)
-        } else finalizeNonProxiedObject(child)
+        } else {
+            finalizeNonProxiedObject(child)
+        }
     })
     // always freeze completely new data
     freeze(parent)
@@ -106,10 +141,11 @@ function finalizeNonProxiedObject(parent) {
 
 export function verifyReturnValue(value) {
     // values either than undefined will trigger warning;
-    if (value !== undefined)
+    if (value !== undefined) {
         console.warn(
             `Immer callback expects no return value. However ${typeof value} was returned`
         )
+    }
 }
 
 export function is(x, y) {

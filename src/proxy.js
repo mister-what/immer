@@ -32,6 +32,126 @@ const objectTraps = {
     }
 }
 
+function ProxyForKeyStore() {
+    const proxyMap = new Map()
+    this.getOriginal = key => {
+        if (proxyMap.has(key)) {
+            return proxyMap.get(key)
+        }
+        return key
+    }
+    this.addKeyProxy = (originalKey, proxyKey) =>
+        proxyMap.set(proxyKey, originalKey)
+}
+
+const proxyForKeyStore = new ProxyForKeyStore()
+
+const mapMethods = {
+    has: state => value => {
+        if (state.modified) {
+            return state.copy.has(value)
+        } else {
+            return state.base.has(value)
+        }
+    },
+    get: state => key => {
+        key = proxyForKeyStore.getOriginal(key)
+        if (state.modified) {
+            let value = state.copy.get(key)
+            if (value === state.base.get(key) && isProxyable(value)) {
+                value = createProxy(state, value)
+                state.copy.set(key, value)
+            }
+            return value
+        } else {
+            if (state.mapProxies.has(key)) {
+                return state.mapProxies.get(key).value
+            }
+            let value = state.base.get(key)
+            if (!isProxy(value) && isProxyable(value)) {
+                value = createProxy(state, value)
+                state.mapProxies.set(key, {
+                    value,
+                    key:
+                        !isProxy(key) && isProxyable(key)
+                            ? createProxy(state, key)
+                            : key
+                })
+            }
+            return value
+        }
+    },
+    delete: state => key => {
+        if (!state.modified && state.base.has(key)) {
+            markChanged(state)
+            return state.copy.delete(key)
+        } else if (state.modified && state.copy.has(key)) {
+            return state.copy.delete(key)
+        }
+        return false
+    },
+    clear: state => () => {
+        if (state.modified) {
+            state.copy.clear()
+        } else {
+            if (state.base.size === 0) {
+                return
+            }
+            markChanged(state)
+            state.copy.clear()
+        }
+    },
+    values: state => () => {},
+    entries: state => () => {
+        function* entriesGenerator(mapObj) {
+            const getter = mapMethods.get(state)
+            const iterator = mapObj.entries()
+            for (let entry of iterator) {
+                let [key] = entry
+                let proxyKey = key
+                if (!isProxy(key) && isProxyable(key)) {
+                    proxyKey = createProxy(state, key)
+                    proxyForKeyStore.addKeyProxy(key, proxyKey)
+                }
+                yield [proxyKey, getter(proxyKey)]
+            }
+        }
+
+        if (state.modified) {
+            return entriesGenerator(state.copy)
+        } else {
+            return entriesGenerator(state.base)
+        }
+    },
+    forEach: state => (callback, thisArg) => {
+        if (thisArg) {
+            callback.bind(thisArg)
+        }
+        const entriesForState = mapMethods.entries(state)
+        for (let entry of entriesForState) {
+            const [key, value] = entry
+            const mapObj = state.modified ? state.copy : state.base
+            callback(value, key, mapObj)
+        }
+    },
+    set: state => (key, value) => {
+        let returnValue
+
+        if (!state.modified) {
+            if (!state.base.has(proxyForKeyStore.getOriginal(key))) {
+                markChanged(state)
+                state.copy.set(key, value)
+                returnValue = state.copy
+            } else {
+                returnValue = state.base
+            }
+        } else {
+            state.copy.set(key, value)
+            returnValue = state.copy
+        }
+        return returnValue
+    }
+}
 const arrayTraps = {}
 each(objectTraps, (key, fn) => {
     arrayTraps[key] = function() {
@@ -47,7 +167,8 @@ function createState(parent, base) {
         parent,
         base,
         copy: undefined,
-        proxies: {}
+        proxies: {},
+        mapProxies: new Map()
     }
 }
 
@@ -56,20 +177,28 @@ function source(state) {
 }
 
 function get(state, prop) {
-    if (prop === PROXY_STATE) return state
+    if (prop === PROXY_STATE) {
+        return state
+    }
+    if (state.base instanceof Map && prop in mapMethods) {
+        return mapMethods[prop](state)
+    }
     if (state.modified) {
         const value = state.copy[prop]
-        if (value === state.base[prop] && isProxyable(value))
+        if (value === state.base[prop] && isProxyable(value)) {
             // only create proxy if it is not yet a proxy, and not a new object
             // (new objects don't need proxying, they will be processed in finalize anyway)
             return (state.copy[prop] = createProxy(state, value))
+        }
         return value
     } else {
-        if (prop !== "constructor" && prop in state.proxies)
+        if (prop !== "constructor" && prop in state.proxies) {
             return state.proxies[prop]
+        }
         const value = state.base[prop]
-        if (!isProxy(value) && isProxyable(value))
+        if (!isProxy(value) && isProxyable(value)) {
             return (state.proxies[prop] = createProxy(state, value))
+        }
         return value
     }
 }
@@ -79,8 +208,9 @@ function set(state, prop, value) {
         if (
             (prop in state.base && is(state.base[prop], value)) ||
             (prop in state.proxies && state.proxies[prop] === value)
-        )
+        ) {
             return true
+        }
         markChanged(state)
     }
     state.copy[prop] = value
@@ -88,8 +218,12 @@ function set(state, prop, value) {
 }
 
 function deleteProperty(state, prop) {
-    markChanged(state)
-    delete state.copy[prop]
+    if (!state.modified && prop in state.base) {
+        markChanged(state)
+        delete state.copy[prop]
+    } else if (state.modified && prop in state.copy) {
+        delete state.copy[prop]
+    }
     return true
 }
 
@@ -98,8 +232,13 @@ function getOwnPropertyDescriptor(state, prop) {
         ? state.copy
         : prop in state.proxies ? state.proxies : state.base
     const descriptor = Reflect.getOwnPropertyDescriptor(owner, prop)
-    if (descriptor && !(Array.isArray(owner) && prop === "length"))
+    if (
+        descriptor &&
+        !(Array.isArray(owner) && prop === "length") &&
+        !(owner instanceof Set)
+    ) {
         descriptor.configurable = true
+    }
     return descriptor
 }
 
@@ -108,14 +247,21 @@ function defineProperty() {
         "Immer does currently not support defining properties on draft objects"
     )
 }
-
 function markChanged(state) {
     if (!state.modified) {
-        state.modified = true
         state.copy = shallowCopy(state.base)
         // copy the proxies over the base-copy
         Object.assign(state.copy, state.proxies) // yup that works for arrays as well
-        if (state.parent) markChanged(state.parent)
+        state.modified = true
+        if (state.base instanceof Map) {
+            state.copy = Object.assign(new Map(state.base), state.copy)
+            state.mapProxies.forEach((mapProxy, key) => {
+                state.copy.set(key, mapProxy)
+            })
+        }
+        if (state.parent) {
+            markChanged(state.parent)
+        }
     }
 }
 
